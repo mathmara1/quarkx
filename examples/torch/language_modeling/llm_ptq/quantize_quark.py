@@ -72,6 +72,35 @@ for _scheme_name, _formats in ADAPTIVE_SCHEMES.items():
     )
     print(f"[INFO]: Registered adaptive quantization scheme '{_scheme_name}' with formats {_formats}")
 
+# --- Scale-rounding-mode experiment schemes ---
+# 2x3x2 grid: {mxfp4, mxfp6_e2m3} x {even, floor, ceil} x {weight-only, weight+activation}.
+# Built-in "mxfp4" / "mxfp6_e2m3" already cover the W+A even baselines, so we register
+# the other 10 here. Scheme naming: <format>_<mode>_<scope> where scope is "wo" or "wa".
+from quark.torch.quantization.config.config import OCP_MXFP4Spec, OCP_MXFP6E2M3Spec  # noqa: E402
+
+_ROUNDING_FORMATS = {
+    "mxfp4": OCP_MXFP4Spec,
+    "mxfp6_e2m3": OCP_MXFP6E2M3Spec,
+}
+_ROUNDING_MODES = ["even", "floor", "ceil"]
+_ROUNDING_SCOPES = ["wo", "wa"]  # weight-only vs weight+activation
+
+for _fmt_name, _spec_cls in _ROUNDING_FORMATS.items():
+    for _mode in _ROUNDING_MODES:
+        for _scope in _ROUNDING_SCOPES:
+            # Skip W+A even — already provided by built-in "mxfp4" / "mxfp6_e2m3"
+            if _mode == "even" and _scope == "wa":
+                continue
+            _scheme_name = f"{_fmt_name}_{_mode}_{_scope}"
+            _w_spec = _spec_cls(ch_axis=-1, is_dynamic=False, scale_calculation_mode=_mode).to_quantization_spec()
+            if _scope == "wa":
+                _a_spec = _spec_cls(ch_axis=-1, is_dynamic=True, scale_calculation_mode=_mode).to_quantization_spec()
+                _cfg = QLayerConfig(weight=_w_spec, input_tensors=_a_spec)
+            else:
+                _cfg = QLayerConfig(weight=_w_spec)
+            LLMTemplate.register_scheme(_scheme_name, config=_cfg)
+            print(f"[INFO]: Registered rounding-experiment scheme '{_scheme_name}'")
+
 # --- Custom Model Templates (optional reference, uncomment as needed) ---
 # # Model: internlm/internlm2-chat-7b
 # internlm2_template = LLMTemplate(

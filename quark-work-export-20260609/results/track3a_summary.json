@@ -1,0 +1,30 @@
+{
+  "track": "3a - adaptive MXFP6 grid-selection validation in Quark fork",
+  "date": "2026-06-09",
+  "quark_version": "0.11.1+28871bf",
+  "branch": "release/0.11",
+  "adaptive_scheme": "mxfp_adaptive_e2m3_e3m2",
+  "model": "Qwen/Qwen3-0.6B",
+  "eval": "Quark ppl_eval, wikitext-2-raw-v1 test, seq_len=2048 full-test (NOT the library's seq512/1-seq frame)",
+  "ppl": {
+    "baseline_unquantized_bf16": 20.971,
+    "adaptive_mxfp_e2m3_e3m2": 21.376,
+    "mxfp6_e2m3_single": 21.694,
+    "mxfp6_e3m2_single": 21.778
+  },
+  "delta_vs_baseline_ppl": {
+    "adaptive": 0.405,
+    "mxfp6_e2m3": 0.723,
+    "mxfp6_e3m2": 0.807
+  },
+  "verdicts": {
+    "layer1_smoke": "PASS",
+    "layer2_per_block_invariant": "PASS (adaptive < both singles, equal to neither -> non-degenerate)",
+    "ready_for_layer3": true
+  },
+  "notes": [
+    "--skip_evaluation prints NO PPL in this build; PPL via real eval path (eval_model->ppl_eval).",
+    "Absolute PPL not comparable to library's 19.66 (different eval frame + 2-way vs 4-way).",
+    "Adaptive ~halves quant degradation vs single 6-bit formats."
+  ]
+}
