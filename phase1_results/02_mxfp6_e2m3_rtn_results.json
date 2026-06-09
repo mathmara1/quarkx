@@ -1,0 +1,40 @@
+{
+  "arc_challenge": {
+    "acc": 0.5461,
+    "acc_norm": 0.5563
+  },
+  "arc_easy": {
+    "acc": 0.8295,
+    "acc_norm": 0.811
+  },
+  "gsm8k_platinum": {
+    "exact_match": 0.8999
+  },
+  "hellaswag": {
+    "acc": 0.5701,
+    "acc_norm": 0.7475
+  },
+  "ifeval": {
+    "inst_level_loose_acc": 0.4053,
+    "inst_level_strict_acc": 0.3777,
+    "prompt_level_loose_acc": 0.2754,
+    "prompt_level_strict_acc": 0.2348
+  },
+  "lambada_standard": {
+    "acc": 0.6142,
+    "perplexity": 6.1231
+  },
+  "leaderboard_mmlu_pro": {
+    "acc": 0.4694
+  },
+  "piqa": {
+    "acc": 0.7704,
+    "acc_norm": 0.7731
+  },
+  "winogrande": {
+    "acc": 0.6811
+  },
+  "_wikitext": {
+    "perplexity": 9.768502235412598
+  }
+}
