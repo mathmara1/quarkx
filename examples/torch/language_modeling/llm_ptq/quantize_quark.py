@@ -82,7 +82,7 @@ _ROUNDING_FORMATS = {
     "mxfp4": OCP_MXFP4Spec,
     "mxfp6_e2m3": OCP_MXFP6E2M3Spec,
 }
-_ROUNDING_MODES = ["even", "floor", "ceil"]
+_ROUNDING_MODES = ["even", "floor", "ceil", "enhanced"]
 _ROUNDING_SCOPES = ["wo", "wa"]  # weight-only vs weight+activation
 
 for _fmt_name, _spec_cls in _ROUNDING_FORMATS.items():

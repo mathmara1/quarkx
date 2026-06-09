@@ -939,6 +939,9 @@ def fake_quantize_mx(
         scale = torch.pow(2, torch.floor(torch.log2(amax)) - emax)
     elif scale_calculation_mode == "ceil":
         scale = torch.pow(2, torch.ceil(torch.log2(amax)) - emax)
+    elif scale_calculation_mode == "enhanced":
+        max_repr = (2.0 - 2.0 ** (-mbits)) * (2.0**emax)
+        scale = torch.pow(2, torch.ceil(torch.log2(amax / max_repr)))
     else:
         scale = even_round(amax, Dtype(mx_element_dtype))
     eps = torch.finfo(torch.float32).eps

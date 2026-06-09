@@ -244,6 +244,11 @@ class UniformScalingObserver(ObserverBase):
             elif self.scale_calculation_mode == "ceil":
                 scale = torch.pow(2, torch.ceil(torch.log2(amax)) - emax)
                 scale = scale.masked_fill(scale == 0.0, self.eps)
+            elif self.scale_calculation_mode == "enhanced":
+                _, mbits_enh, _ = get_dtype_params(self.dtype)
+                max_repr = (2.0 - 2.0 ** (-mbits_enh)) * (2.0**emax)
+                scale = torch.pow(2, torch.ceil(torch.log2(amax / max_repr)))
+                scale = scale.masked_fill(scale == 0.0, self.eps)
             else:
                 raise ValueError(f"Unsupported scale_calculation_mode: {self.scale_calculation_mode}")
             zero_point = torch.zeros_like(scale)
@@ -735,6 +740,11 @@ class PerBlockMXObserver(ObserverBase):
             elif self.scale_calculation_mode == "ceil":
                 scale = torch.pow(2, torch.ceil(torch.log2(self.amax)) - emax)
                 scale = scale.masked_fill(scale == 0.0, self.eps)
+            elif self.scale_calculation_mode == "enhanced":
+                _, mbits_enh, _ = get_dtype_params(dtype)
+                max_repr = (2.0 - 2.0 ** (-mbits_enh)) * (2.0**emax)
+                scale = torch.pow(2, torch.ceil(torch.log2(self.amax / max_repr)))
+                scale = scale.masked_fill(scale == 0.0, self.eps)
             else:
                 raise ValueError(f"Unsupported scale_calculation_mode: {self.scale_calculation_mode}")
             zero_point = torch.zeros_like(scale)
@@ -911,6 +921,11 @@ class PerBlockMXAdaptiveObserver(PerBlockMXObserver):
             scale = scale.masked_fill(scale == 0.0, self.eps)
         elif self.scale_calculation_mode == "ceil":
             scale = torch.pow(2, torch.ceil(torch.log2(amax)) - emax)
+            scale = scale.masked_fill(scale == 0.0, self.eps)
+        elif self.scale_calculation_mode == "enhanced":
+            _, mbits_enh, _ = get_dtype_params(fmt_dtype)
+            max_repr = (2.0 - 2.0 ** (-mbits_enh)) * (2.0**emax)
+            scale = torch.pow(2, torch.ceil(torch.log2(amax / max_repr)))
             scale = scale.masked_fill(scale == 0.0, self.eps)
         else:
             raise ValueError(f"Unsupported scale_calculation_mode: {self.scale_calculation_mode}")
