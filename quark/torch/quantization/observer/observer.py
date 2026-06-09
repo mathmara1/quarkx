@@ -20,7 +20,10 @@ if TYPE_CHECKING:
 from quark.shares.data_type import BaseObserverBase
 from quark.shares.utils.import_utils import is_torch_greater_or_equal_2_5
 from quark.shares.utils.log import ScreenLogger, log_errors
-from quark.torch.kernel.hw_emulation.hw_emulation_interface import fake_quantize_int  # type: ignore
+from quark.torch.kernel.hw_emulation.hw_emulation_interface import (  # type: ignore
+    fake_quantize_fp4_fp6_per_group_with_scale,
+    fake_quantize_int,
+)
 from quark.torch.quantization.config.type import Dtype, QSchemeType, ScaleType, ZeroPointType
 from quark.torch.quantization.nn.utils import check_min_max_valid
 from quark.torch.quantization.utils import (
@@ -840,6 +843,126 @@ class PerBlockMXDiffsObserver(PerBlockMXObserver):
         # Store input for diffs calculation
         self.last_x = x_orig.detach()
         return super().forward(x_orig)
+
+
+class PerBlockMXAdaptiveObserver(PerBlockMXObserver):
+    """
+    Per-block adaptive grid-selection observer for OCP MX formats.
+
+    For each block of `group_size` values, quantize-dequantizes the block
+    under each format in `qspec.adaptive_formats` (e.g. ['fp6_e2m3',
+    'fp6_e3m2']), computes per-block MSE for each candidate, and keeps the
+    format that minimizes block MSE. The selector and the per-block
+    reconstruction are stored as attributes so the downstream quantizer
+    module (AdaptiveStaticFakeQuantize) can use them directly.
+
+    Concept from IF4 (arXiv:2603.28765) and Grid Games (arXiv:2605.12327),
+    extended here to OCP MXFP variants chosen per block.
+
+    The pattern mirrors PerBlockMXDiffsObserver but iterates over candidate
+    formats instead of scale offsets.
+    """
+
+    def __init__(
+        self,
+        qspec: QTensorConfig,
+        device: torch.device | None = None,
+        eps: float = torch.finfo(torch.float32).eps,
+    ) -> None:
+        super().__init__(qspec=qspec, device=device, eps=eps)
+        if not getattr(qspec, "adaptive_formats", None):
+            raise ValueError(
+                "PerBlockMXAdaptiveObserver requires qspec.adaptive_formats "
+                "to be a non-empty list of format names (e.g., ['fp6_e2m3', "
+                "'fp6_e3m2'])."
+            )
+        # Resolve format-name strings into Dtype enum values once, validating
+        # each name. Fail fast at observer construction rather than mid-forward.
+        self.adaptive_format_names: list[str] = list(qspec.adaptive_formats)
+        self.adaptive_dtypes: list[Dtype] = [
+            Dtype.from_str(name) for name in self.adaptive_format_names
+        ]
+        # Will be populated on first forward / calculate_qparams call.
+        self.last_x: torch.Tensor | None = None
+        self.adaptive_recon: torch.Tensor | None = None
+        # int8 tensor of shape (..., n_blocks); value at index i is the position
+        # in `adaptive_format_names` of the winning format for block i.
+        self.adaptive_choices: torch.Tensor | None = None
+
+    def forward(self, x_orig: torch.Tensor) -> torch.Tensor:
+        # Store input — calculate_qparams needs the original to compute MSE
+        # against each candidate's reconstruction. Same pattern as DiffsObserver.
+        self.last_x = x_orig.detach()
+        return super().forward(x_orig)
+
+    def _per_format_recon(self, x: torch.Tensor, fmt_dtype: Dtype) -> torch.Tensor:
+        """Standard OCP MX round-trip for a single candidate format."""
+        # Reproduce PerBlockMXObserver.calculate_qparams scale-selection logic
+        # exactly so per-format reconstructions are RNE-aligned (or floor/ceil,
+        # depending on scale_calculation_mode) per the OCP spec.
+        _, _, emax = get_dtype_params(fmt_dtype)
+        block_x = reshape_to_blocks(x, self.block_size, self.axis)
+        amax, _ = torch.max(torch.abs(block_x), dim=-1, keepdim=True)
+        amax = amax.squeeze(-1)
+        if self.scale_calculation_mode is None or self.scale_calculation_mode == "even":
+            scale = even_round(amax, fmt_dtype)
+        elif self.scale_calculation_mode == "floor":
+            scale = torch.pow(2, torch.floor(torch.log2(amax)) - emax)
+            scale = scale.masked_fill(scale == 0.0, self.eps)
+        elif self.scale_calculation_mode == "ceil":
+            scale = torch.pow(2, torch.ceil(torch.log2(amax)) - emax)
+            scale = scale.masked_fill(scale == 0.0, self.eps)
+        else:
+            raise ValueError(f"Unsupported scale_calculation_mode: {self.scale_calculation_mode}")
+        return fake_quantize_fp4_fp6_per_group_with_scale(
+            x, scale, self.axis, self.block_size, fmt_dtype.value
+        )
+
+    def calculate_qparams(self) -> tuple[torch.Tensor, torch.Tensor]:
+        if self.last_x is None:
+            raise RuntimeError(
+                "PerBlockMXAdaptiveObserver.calculate_qparams called before "
+                "forward(); no input tensor to quantize."
+            )
+        x = self.last_x
+        n_formats = len(self.adaptive_dtypes)
+
+        # Per-format reconstructions. Each has the same shape as `x`.
+        recons = [self._per_format_recon(x, dt) for dt in self.adaptive_dtypes]
+        # Stack on a new leading dim so we can argmin across formats.
+        # shape: (n_formats, *x.shape)
+        stacked = torch.stack(recons, dim=0)
+
+        # Per-block MSE for each format. We assume `self.axis` is the last dim
+        # of x (which is true for Linear weights — the contraction axis). If we
+        # need to support arbitrary axis later, reshape with a transpose.
+        if self.axis not in (-1, x.dim() - 1):
+            raise NotImplementedError(
+                f"PerBlockMXAdaptiveObserver currently assumes axis=-1, got {self.axis}."
+            )
+        *lead, n = x.shape
+        n_blocks = n // self.block_size
+        sqerr = (x.unsqueeze(0) - stacked).pow(2)
+        sqerr = sqerr.reshape(n_formats, *lead, n_blocks, self.block_size)
+        mse_per_block = sqerr.mean(dim=-1)  # (n_formats, *lead, n_blocks)
+
+        # Per-block argmin — which format won.
+        choices = mse_per_block.argmin(dim=0)  # (*lead, n_blocks)
+
+        # Gather the winning reconstruction per block.
+        stacked_blocks = stacked.reshape(n_formats, *lead, n_blocks, self.block_size)
+        gather_idx = choices.unsqueeze(0).unsqueeze(-1).expand(1, *choices.shape, self.block_size)
+        chosen = torch.gather(stacked_blocks, dim=0, index=gather_idx).squeeze(0)
+        self.adaptive_recon = chosen.reshape(*lead, n)
+        self.adaptive_choices = choices.to(torch.int8)
+
+        # Standard observer interface returns (scale, zero_point). The downstream
+        # AdaptiveStaticFakeQuantize ignores these and uses self.adaptive_recon
+        # directly, but we still return sensible placeholders for code paths
+        # that introspect them. Use ones so any accidental multiply is a no-op.
+        scale = torch.ones_like(mse_per_block[0])
+        zero_point = torch.zeros_like(scale)
+        return scale, zero_point
 
 
 class PerBlockBFPObserver(ObserverBase):

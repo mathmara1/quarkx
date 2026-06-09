@@ -152,8 +152,20 @@ class FakeQuantizeBase(ABC, nn.Module):
             return SequentialQuantize(quant_specs=quant_spec, device=device)
 
         constructor_kwargs = {}
+        # Adaptive per-block grid selection (AdaptiveMXSpec) — bypass the
+        # standard scaled-vs-non-scaled dispatch and route directly to the
+        # adaptive quantizer. Detected via the new `adaptive_formats` field
+        # on QTensorConfig; presence of a non-empty list is the signal.
+        if getattr(quant_spec, "adaptive_formats", None):
+            if quant_spec.is_dynamic and not sequential:
+                raise NotImplementedError(
+                    "Adaptive per-block grid selection currently only supports "
+                    "static (weight-only) quantization. Got is_dynamic=True."
+                )
+            scaled_fake_quantize_cls = AdaptiveStaticFakeQuantize  # type: ignore[assignment]
+            constructor_kwargs["sequential"] = sequential
         # Handle single spec case.
-        if quant_spec.dtype in USING_NON_SCALED_QUANT:
+        elif quant_spec.dtype in USING_NON_SCALED_QUANT:
             scaled_fake_quantize_cls = NonScaledFakeQuantize
         else:
             # In case sequential quantization is used, we need to retain the
@@ -437,6 +449,72 @@ class StaticScaledFakeQuantize(ScaledFakeQuantize):
         frozen_fake_quantize_model.quant_spec = self.quant_spec
         frozen_fake_quantize_model.frozen_params = frozen_params
         return frozen_fake_quantize_model
+
+
+class AdaptiveStaticFakeQuantize(StaticScaledFakeQuantize):
+    """
+    Static fake-quantize for per-block adaptive grid selection over OCP MX
+    formats. Pairs with :class:`PerBlockMXAdaptiveObserver`.
+
+    During observation, the observer runs each candidate format on the input
+    tensor, picks the per-block winner by MSE, and stores the final
+    reconstruction as ``self.observer.adaptive_recon``. At forward time we
+    return that pre-computed reconstruction directly — the per-block dispatch
+    has already happened inside the observer; there is no further quantization
+    arithmetic to do here.
+
+    Sized for weight-only PTQ: ``is_dynamic=False`` means the input tensor
+    (typically a Linear's weight) is constant across forward calls after
+    calibration, so caching the recon is correct and free.
+    """
+
+    def __init__(
+        self,
+        quant_spec: QTensorConfig,
+        device: torch.device | None = None,
+        sequential: bool = False,
+    ) -> None:
+        super().__init__(quant_spec=quant_spec, device=device, sequential=sequential)
+        # observer is created by parent class via create_observer; verify it's
+        # the adaptive one (we'd silently produce wrong results otherwise).
+        from quark.torch.quantization.observer import PerBlockMXAdaptiveObserver
+        if not isinstance(self.observer, PerBlockMXAdaptiveObserver):
+            raise TypeError(
+                f"AdaptiveStaticFakeQuantize expects observer_cls=PerBlockMXAdaptiveObserver, "
+                f"got {type(self.observer).__name__}. Check the Spec's to_quantization_spec()."
+            )
+
+    def forward(self, X: torch.Tensor) -> torch.Tensor:
+        if self.is_observer_enabled:
+            self.observe(X)
+
+        if self.is_fake_quant_enabled:
+            recon = self.observer.adaptive_recon
+            if recon is None:
+                raise RuntimeError(
+                    "AdaptiveStaticFakeQuantize.forward called with fake_quant "
+                    "enabled but observer has no adaptive_recon. Did calibration "
+                    "(observe) run first?"
+                )
+            # Sanity: the reconstruction must match the live tensor shape. If
+            # shapes ever diverge (e.g. dynamic shapes), recompute via the
+            # observer rather than returning a stale buffer.
+            if recon.shape != X.shape:
+                self.observer.last_x = X.detach()
+                self.observer.calculate_qparams()
+                recon = self.observer.adaptive_recon
+            assert recon is not None  # narrow for type checker
+            X = recon.to(dtype=X.dtype, device=X.device)
+
+        assert_no_nan(X, message="output tensor X contains NaN!")
+        return X
+
+    def extra_repr(self) -> str:
+        formats = getattr(self.observer, "adaptive_format_names", None)
+        return (
+            f"fake_quant_enabled={self.fake_quant_enabled}, observer_enabled={self.observer_enabled}, "
+            f"adaptive_formats={formats}, group_size={self.group_size}, ch_axis={self.ch_axis}"
+        )
 
 
 class DynamicScaledFakeQuantize(ScaledFakeQuantize):

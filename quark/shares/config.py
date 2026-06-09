@@ -80,6 +80,15 @@ class BaseQTensorConfig(ABC):
     # Quantization Specification for BaseDtype in [MX]
     mx_element_dtype: BaseDtype | None = None
     ###################################################################################################
+    # Quantization Specification for adaptive per-block grid selection.
+    # When set to a non-empty list of MX element-format names (e.g.
+    # ['fp6_e2m3', 'fp6_e3m2']), the dispatcher routes to
+    # PerBlockMXAdaptiveObserver + AdaptiveStaticFakeQuantize, which choose
+    # the per-block lowest-MSE format from the candidates. `dtype` should be
+    # set to one of the candidate formats as a placeholder for any code that
+    # introspects it; the adaptive path ignores it.
+    adaptive_formats: list[str] | None = None
+    ###################################################################################################
     # Quantization zero point Specification for BaseDtype
     zero_point_type: BaseZeroPointType | None = None
 

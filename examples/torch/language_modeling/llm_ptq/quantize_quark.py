@@ -40,23 +40,39 @@ from quark.torch.utils.llm import (
     revert_model_patching,
 )
 
-# The code below demonstrates how to register custom model templates and
-# quantization schemes. If you need to add support for a new model architecture
-# or define custom quantization configurations, uncomment and modify this section.
+# --- Custom Quantization Schemes ---
+# Register per-block adaptive grid selection schemes. Each entry quantizes
+# weights such that, for each block of 32 values, the format minimizing
+# per-block MSE is chosen from a candidate list. Activations stay BF16
+# (weight-only PTQ). See examples/torch/language_modeling/adaptive_grid/
+# README.md for the experimental motivation.
 #
-# To use:
-#   1. Uncomment the code below
-#   2. Modify the templates and/or schemes to match your model's architecture and/or quantization scheme
-#   3. Run quantize_quark.py with your custom --quant_scheme name if new quantization schemes are registered
-#
+# To add a new candidate-set combination, append to ADAPTIVE_SCHEMES below.
+# Format names: "fp6_e2m3", "fp6_e3m2", "fp4". CLI invocation is
+# `--quant_scheme <name>` exactly like built-in schemes.
+from quark.torch.quantization.config.config import AdaptiveMXSpec, QLayerConfig  # noqa: E402
 
-# from quark.torch.quantization.config.config import (
-#     Int8PerTensorSpec,
-#     QLayerConfig,
-# )
+ADAPTIVE_SCHEMES: dict[str, list[str]] = {
+    "mxfp_adaptive_e2m3_e3m2": ["fp6_e2m3", "fp6_e3m2"],
+    # Add more combinations here as research dictates, e.g.:
+    # "mxfp_adaptive_e2m3_e3m2_fp4": ["fp6_e2m3", "fp6_e3m2", "fp4"],
+}
 
-# # --- Custom Model Templates ---
-# # Define templates for model architectures not in the built-in list.
+for _scheme_name, _formats in ADAPTIVE_SCHEMES.items():
+    _adaptive_spec = AdaptiveMXSpec(
+        formats=_formats,
+        ch_axis=-1,
+        group_size=32,
+        is_dynamic=False,
+        scale_calculation_mode="even",
+    ).to_quantization_spec()
+    LLMTemplate.register_scheme(
+        _scheme_name,
+        config=QLayerConfig(weight=_adaptive_spec),
+    )
+    print(f"[INFO]: Registered adaptive quantization scheme '{_scheme_name}' with formats {_formats}")
+
+# --- Custom Model Templates (optional reference, uncomment as needed) ---
 # # Model: internlm/internlm2-chat-7b
 # internlm2_template = LLMTemplate(
 #     model_type="internlm2",
@@ -67,10 +83,8 @@ from quark.torch.utils.llm import (
 # LLMTemplate.register_template(internlm2_template)
 # print(f"[INFO]: Registered template '{internlm2_template.model_type}'")
 
-# # --- Custom Quantization Schemes ---
-# # Define custom quantization schemes using Quark's public QuantizationSpec classes.
-# # These schemes can then be used via --quant_scheme <scheme_name>.
-# # INT8 weight-only quantization
+# --- Other custom scheme example (kept for reference) ---
+# from quark.torch.quantization.config.config import Int8PerTensorSpec
 # int8_wo_scheme = QLayerConfig(weight=Int8PerTensorSpec().to_quantization_spec())
 # LLMTemplate.register_scheme("int8_wo", config=int8_wo_scheme)
 # print(f"[INFO]: Registered quantization scheme 'int8_wo'")

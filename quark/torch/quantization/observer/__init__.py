@@ -7,6 +7,7 @@ from .lsq_observer import LSQObserver
 from .observer import (
     ObserverBase,
     PerBlockBFPObserver,
+    PerBlockMXAdaptiveObserver,
     PerBlockMXDiffsObserver,
     PerBlockMXObserver,
     PerChannelMinMaxObserver,
@@ -40,6 +41,7 @@ __all__ = [
     "PerTensorMSEObserver",
     "PerBlockMXObserver",
     "PerBlockMXDiffsObserver",
+    "PerBlockMXAdaptiveObserver",
     "PerBlockBFPObserver",
     "PerGroupMinMaxObserver",
     "UniformScalingObserver",
@@ -66,7 +68,13 @@ PER_TENSOR_OBSERVERS = {
     LSQObserver,
 }
 
-PER_GROUP_OBSERVERS = {PerBlockMXObserver, PerBlockMXDiffsObserver, PerBlockBFPObserver, PerGroupMinMaxObserver}
+PER_GROUP_OBSERVERS = {
+    PerBlockMXObserver,
+    PerBlockMXDiffsObserver,
+    PerBlockMXAdaptiveObserver,
+    PerBlockBFPObserver,
+    PerGroupMinMaxObserver,
+}
 
 OBSERVER_CLASSES = (
     PLACEHOLDER_OBSERVERS

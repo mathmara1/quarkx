@@ -1,0 +1,54 @@
+{
+  "title": "Llama-3.3-70B MXFP4 vs BF16 on MI350X (1024in/1024out, random)",
+  "speedup_definition": "throughput_speedup_x = mxfp4_output_tok_s / bf16_output_tok_s ; tpot_speedup_x = bf16_tpot / mxfp4_tpot (higher=MXFP4 faster)",
+  "hardware": "AMD Instinct MI350X (gfx950)",
+  "container_image": "rocm/vllm-dev:nightly_main_20251117",
+  "mxfp4_model": "amd/Llama-3.3-70B-Instruct-MXFP4-Preview",
+  "bf16_model": "unsloth/Llama-3.3-70B-Instruct (BF16)",
+  "rows": [
+    {
+      "max_concurrency": 1,
+      "bf16_output_tok_s": 35.32,
+      "mxfp4_output_tok_s": 72.07,
+      "throughput_speedup_x": 2.04,
+      "bf16_mean_tpot_ms": 28.18,
+      "mxfp4_mean_tpot_ms": 13.79,
+      "tpot_speedup_x": 2.04,
+      "bf16_mean_ttft_ms": 167.63,
+      "mxfp4_mean_ttft_ms": 103.13
+    },
+    {
+      "max_concurrency": 4,
+      "bf16_output_tok_s": 69.92,
+      "mxfp4_output_tok_s": 269.82,
+      "throughput_speedup_x": 3.86,
+      "bf16_mean_tpot_ms": 56.99,
+      "mxfp4_mean_tpot_ms": 14.68,
+      "tpot_speedup_x": 3.88,
+      "bf16_mean_ttft_ms": 281.72,
+      "mxfp4_mean_ttft_ms": 157.16
+    },
+    {
+      "max_concurrency": 16,
+      "bf16_output_tok_s": 426.85,
+      "mxfp4_output_tok_s": 738.41,
+      "throughput_speedup_x": 1.73,
+      "bf16_mean_tpot_ms": 37.07,
+      "mxfp4_mean_tpot_ms": 21.43,
+      "tpot_speedup_x": 1.73,
+      "bf16_mean_ttft_ms": 443.83,
+      "mxfp4_mean_ttft_ms": 255.85
+    },
+    {
+      "max_concurrency": 64,
+      "bf16_output_tok_s": 1264.36,
+      "mxfp4_output_tok_s": 1414.28,
+      "throughput_speedup_x": 1.12,
+      "bf16_mean_tpot_ms": 49.74,
+      "mxfp4_mean_tpot_ms": 44.83,
+      "tpot_speedup_x": 1.11,
+      "bf16_mean_ttft_ms": 901.02,
+      "mxfp4_mean_ttft_ms": 446.25
+    }
+  ]
+}

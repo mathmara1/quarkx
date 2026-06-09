@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(py -3.12 -m venv .venv312)",
+      "Bash(.venv312/Scripts/python.exe -m pip install --upgrade pip)",
+      "WebFetch(domain:rocm.blogs.amd.com)",
+      "WebFetch(domain:quark.docs.amd.com)"
+    ]
+  }
+}

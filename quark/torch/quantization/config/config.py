@@ -1447,6 +1447,82 @@ class OCP_MXFP6E2M3Spec(OCP_MXSpec):
 
 
 @dataclass
+class AdaptiveMXSpec(OCP_MXSpec):
+    """
+    Per-block adaptive grid-selection over OCP MX element formats.
+
+    For each block of ``group_size`` values, the runtime quantizes the block
+    under each candidate format in ``formats`` and keeps the one with lowest
+    per-block MSE. The selector tag is held in memory (1 bit per block for
+    2 candidates, log2(N) bits for N candidates); for accuracy research the
+    selector is discarded after quantization since the reconstructed BF16
+    weight tensor carries the full per-block decision implicitly.
+
+    See: IF4 (arXiv:2603.28765) and Grid Games (arXiv:2605.12327).
+
+    :param list[str] formats: Candidate MX element-format names, e.g.
+        ``["fp6_e2m3", "fp6_e3m2"]``. Must contain at least one entry; with
+        a single entry this degenerates to standard MX-format quantization.
+    :param int ch_axis: Axis along which blocks are formed. -1 (default)
+        matches the contraction axis of ``F.linear``.
+    :param int group_size: Block size. OCP MX spec uses 32.
+    :param bool is_dynamic: ``False`` for weights (PTQ), ``True`` for
+        activations. The prototype is weight-only — ``True`` is allowed by
+        the spec but the downstream quantizer has only been exercised for
+        ``is_dynamic=False``.
+    :param str scale_calculation_mode: How per-block scales are rounded:
+        ``"even"`` (RNE, default), ``"floor"``, ``"ceil"``. Applied
+        uniformly across all candidate formats.
+    """
+
+    ch_axis: int = -1
+    formats: list[str] = field(default_factory=lambda: ["fp6_e2m3", "fp6_e3m2"])
+    group_size: int = 32
+    is_dynamic: bool = False
+    scale_calculation_mode: str = "even"
+
+    def __post_init__(self) -> None:
+        if not self.formats:
+            raise ValueError("AdaptiveMXSpec.formats must contain at least one format name.")
+        if self.group_size <= 0:
+            raise ValueError(f"AdaptiveMXSpec.group_size must be positive, got {self.group_size}.")
+        # Validate each format string is recognized by the OCP MX path. Fail
+        # fast at scheme-registration time rather than mid-calibration.
+        supported = {"fp4", "fp6_e2m3", "fp6_e3m2"}
+        unknown = [f for f in self.formats if f not in supported]
+        if unknown:
+            raise ValueError(
+                f"AdaptiveMXSpec received unsupported formats {unknown}. "
+                f"Supported (OCP MX FP path): {sorted(supported)}."
+            )
+
+    def to_quantization_spec(self) -> QTensorConfig:
+        # Import locally to avoid a circular import via the observers package.
+        from quark.torch.quantization.observer import PerBlockMXAdaptiveObserver
+
+        # Pick the first listed format as the placeholder `dtype`; the actual
+        # per-block dtype dispatch lives in the observer + adaptive quantizer.
+        # Using a real Dtype here keeps the broader Quark validation happy
+        # (ALL_DATA_TYPES check, USING_NON_SCALED_QUANT lookup, etc.).
+        placeholder_dtype = Dtype.from_str(self.formats[0])
+
+        # We override observer_cls and group_size (allowing block-size sweeps),
+        # and pass adaptive_formats. The rest of the OCP MX kwargs
+        # (scale_format, qscheme, ...) are inherited from OCP_MX_SPEC_KWARGS.
+        mx_kwargs = dict(self.OCP_MX_SPEC_KWARGS)
+        mx_kwargs["observer_cls"] = PerBlockMXAdaptiveObserver
+        mx_kwargs["group_size"] = self.group_size
+        return QTensorConfig(
+            dtype=placeholder_dtype,
+            scale_calculation_mode=self.scale_calculation_mode,
+            is_dynamic=self.is_dynamic,
+            ch_axis=self.ch_axis,
+            adaptive_formats=list(self.formats),
+            **mx_kwargs,
+        )  # type: ignore[arg-type]
+
+
+@dataclass
 @add_start_docstring(
     DATA_TYPE_SPEC_DOCSTRING.format(
         "MX OCP data type using FP4",

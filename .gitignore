@@ -164,3 +164,7 @@ dataset_cache/
 
 # Debian packages
 *.deb
+quark-venv/
+output_*/
+*.pyc
+__pycache__/

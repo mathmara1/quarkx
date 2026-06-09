@@ -1,0 +1,103 @@
+{
+  "experiment": "Blog4 Figure6 pattern: vLLM serving throughput/latency vs concurrency",
+  "model": "amd/Llama-3.3-70B-Instruct-MXFP4-Preview",
+  "model_path": "/work/models/Llama-3.3-70B-MXFP4",
+  "quantization": {
+    "method": "quark",
+    "format": "MXFP4",
+    "weight_dtype": "fp4",
+    "group_size": 32,
+    "mx_scale": "e8m0",
+    "kv_cache": "fp8_e4m3"
+  },
+  "hardware": "AMD Instinct MI350X (gfx950, 288GB)",
+  "rocm": "7.0.2",
+  "container_image": "rocm/vllm-dev:nightly_main_20251117",
+  "serve_config": {
+    "gpu_memory_utilization": 0.9,
+    "max_num_seqs": 1024,
+    "max_model_len": 4096,
+    "swap_space_gb": 16
+  },
+  "workload": {
+    "dataset": "random",
+    "input_len": 1024,
+    "output_len": 1024,
+    "num_prompts_formula": "concurrency * 16"
+  },
+  "results": [
+    {
+      "max_concurrency": 1,
+      "num_prompts": 16,
+      "completed": 16,
+      "failed": 0,
+      "duration_s": 227.32,
+      "request_throughput_req_s": 0.0704,
+      "output_throughput_tok_s": 72.07,
+      "total_token_throughput_tok_s": 144.08,
+      "mean_ttft_ms": 103.13,
+      "median_ttft_ms": 107.92,
+      "p99_ttft_ms": 109.33,
+      "mean_tpot_ms": 13.79,
+      "median_tpot_ms": 13.78,
+      "p99_tpot_ms": 13.83,
+      "mean_itl_ms": 13.79,
+      "per_run_file": "bench_N1.json"
+    },
+    {
+      "max_concurrency": 4,
+      "num_prompts": 64,
+      "completed": 64,
+      "failed": 0,
+      "duration_s": 242.89,
+      "request_throughput_req_s": 0.2635,
+      "output_throughput_tok_s": 269.82,
+      "total_token_throughput_tok_s": 539.37,
+      "mean_ttft_ms": 157.16,
+      "median_ttft_ms": 123.3,
+      "p99_ttft_ms": 489.67,
+      "mean_tpot_ms": 14.68,
+      "median_tpot_ms": 14.67,
+      "p99_tpot_ms": 15.34,
+      "mean_itl_ms": 14.68,
+      "per_run_file": "bench_N4.json"
+    },
+    {
+      "max_concurrency": 16,
+      "num_prompts": 256,
+      "completed": 256,
+      "failed": 0,
+      "duration_s": 355.01,
+      "request_throughput_req_s": 0.7211,
+      "output_throughput_tok_s": 738.41,
+      "total_token_throughput_tok_s": 1476.1,
+      "mean_ttft_ms": 255.85,
+      "median_ttft_ms": 221.46,
+      "p99_ttft_ms": 976.45,
+      "mean_tpot_ms": 21.43,
+      "median_tpot_ms": 21.63,
+      "p99_tpot_ms": 21.96,
+      "mean_itl_ms": 21.43,
+      "per_run_file": "bench_N16.json"
+    },
+    {
+      "max_concurrency": 64,
+      "num_prompts": 1024,
+      "completed": 1024,
+      "failed": 0,
+      "duration_s": 741.42,
+      "request_throughput_req_s": 1.3811,
+      "output_throughput_tok_s": 1414.28,
+      "total_token_throughput_tok_s": 2827.19,
+      "mean_ttft_ms": 446.25,
+      "median_ttft_ms": 318.6,
+      "p99_ttft_ms": 3526.93,
+      "mean_tpot_ms": 44.83,
+      "median_tpot_ms": 45.8,
+      "p99_tpot_ms": 46.07,
+      "mean_itl_ms": 44.83,
+      "per_run_file": "bench_N64.json"
+    }
+  ],
+  "baseline_comparison_note": "BF16 baseline of the same Llama-3.3-70B on this setup is TBD; rerun this exact sweep against the BF16 weights to compute the MXFP4 speedup ratio."
+}
